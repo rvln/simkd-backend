@@ -29,7 +29,7 @@ class PaymentService
     /**
      * Initiate a financial (DANA) donation and return Snap Token.
      * Creates a Donation record with status=PENDING and type=DANA.
-     * tracking_code is NOT generated here — only upon confirmed SUCCESS via webhook.
+     * tracking_code is NOT generated here — it is generated upon confirmed SUCCESS via webhook.
      *
      * @param string|null $userId  Authenticated user UUID (nullable for guest donors).
      * @param array $donorData     ['donorName', 'donorEmail', 'donorPhone']
@@ -46,15 +46,16 @@ class PaymentService
 
             try {
                 $donation = Donation::create([
-                    'user_id'         => $userId,
-                    'donorName'       => $donorData['donorName'],
-                    'donorEmail'      => $donorData['donorEmail'],
-                    'donorPhone'      => $donorData['donorPhone'],
-                    'type'            => DonationTypeEnum::DANA->value,
-                    'amount'          => $amount,
-                    'status'          => DonationStatusEnum::PENDING->value,
-                    'payment_channel' => $paymentChannel,
-                    'payment_proof'   => $proofPath,
+                    'user_id'            => $userId,
+                    'donorName'          => $donorData['donorName'],
+                    'donorEmail'         => $donorData['donorEmail'],
+                    'donorPhone'         => $donorData['donorPhone'],
+                    'donor_name_privacy' => $donorData['donor_name_privacy'] ?? 'show',
+                    'type'               => DonationTypeEnum::DANA->value,
+                    'amount'             => $amount,
+                    'status'             => DonationStatusEnum::PENDING->value,
+                    'payment_channel'    => $paymentChannel,
+                    'payment_proof'      => $proofPath,
                 ]);
 
                 if ($paymentChannel === 'MANUAL') {
@@ -171,18 +172,14 @@ class PaymentService
         return;
     }
 
-    // Hanya donasi NON-DANA (barang) yang boleh memiliki tracking_code
-    $trackingCode = null;
-    if ($lockedDonation->type->value !== DonationTypeEnum::DANA->value) {
-        $trackingCode = 'TXN-DON-' . strtoupper(Str::random(8));
-        // Atau panggil generateTrackingCode() jika Anda ingin format tahun:
-        // $trackingCode = $this->generateTrackingCode();
-    }
+    // Generate tracking_code untuk SEMUA donasi yang berhasil (DANA dan BARANG).
+    // Menggunakan generateTrackingCode() untuk collision-safe format TXN-DON-YYYY-XXXXXXXX.
+    $trackingCode = $this->generateTrackingCode();
 
     $lockedDonation->update([
         'status'        => DonationStatusEnum::SUCCESS->value,
         'payment_type'  => $payload['payment_type'] ?? $lockedDonation->payment_type,
-        'tracking_code' => $trackingCode, // NULL untuk DANA
+        'tracking_code' => $trackingCode,
     ]);
 });
 

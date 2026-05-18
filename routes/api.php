@@ -17,6 +17,7 @@ use App\Http\Controllers\PublicTransparencyController;
 use App\Http\Controllers\VisitReportController;
 use App\Http\Controllers\AdminReportModerationController;
 use App\Http\Controllers\Auth\SocialiteController;
+use App\Http\Controllers\ProfileController;
 
 /*
 |--------------------------------------------------------------------------
@@ -52,6 +53,7 @@ Route::get('/public/transparansi/kebutuhan', [PublicTransparencyController::clas
 Route::get('/public/transparansi/kunjungan', [PublicTransparencyController::class, 'visits']);
 Route::get('/public/transparansi/laporan', [PublicTransparencyController::class, 'visitReports']);
 Route::get('/public/kunjungan/upcoming', [PublicTransparencyController::class, 'upcomingVisits']);
+Route::get('/public/jejak-kebaikan', [PublicTransparencyController::class, 'jejak'])->middleware('throttle:30,1');
 
 /*
 |--------------------------------------------------------------------------
@@ -69,8 +71,19 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Auth — Fetch current user session (RBAC backbone)
     Route::get('/user', function (\Illuminate\Http\Request $request) {
-        return response()->json(['data' => $request->user()]);
+        $user = $request->user();
+        return response()->json(['data' => [
+            'id'    => $user->id,
+            'name'  => $user->name,
+            'email' => $user->email,
+            'phone' => $user->phone,
+            'role'  => $user->role instanceof \App\Enums\RoleEnum ? $user->role->value : $user->role,
+            'email_verified_at' => $user->email_verified_at,
+        ]]);
     });
+
+    // Profile Update (name & phone)
+    Route::patch('/user/profile', [ProfileController::class, 'update']);
 
     // Dashboard BFF
     Route::get('/dashboard/overview', [\App\Http\Controllers\DashboardController::class, 'getOverview']);

@@ -56,6 +56,7 @@ class AdminReportModerationController extends Controller
                     ? $report->status->value
                     : $report->status,
                 'admin_notes' => $report->admin_notes,
+                'admin_title' => $report->admin_title,
                 'visit_date'  => $report->visit?->capacity?->date?->toDateString(),
                 'created_at'  => $report->created_at->toIso8601String(),
             ];
@@ -88,7 +89,8 @@ class AdminReportModerationController extends Controller
             $updated = $this->visitReportService->moderateReport(
                 $report,
                 $request->validated()['status'],
-                $request->validated()['admin_notes'] ?? null
+                $request->validated()['admin_notes'] ?? null,
+                $request->validated()['admin_title'] ?? null
             );
 
             return response()->json([

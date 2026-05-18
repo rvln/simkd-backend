@@ -32,9 +32,10 @@ class DonationController extends Controller
             $result = $this->paymentService->initiateDonation(
                 Auth::id(),
                 [
-                    'donorName'  => $request->donorName,
-                    'donorEmail' => $request->donorEmail,
-                    'donorPhone' => $request->donorPhone,
+                    'donorName'          => $request->donorName,
+                    'donorEmail'         => $request->donorEmail,
+                    'donorPhone'         => $request->donorPhone,
+                    'donor_name_privacy' => $request->input('donor_name_privacy', 'show'),
                 ],
                 (float) $request->amount,
                 $paymentChannel,
@@ -144,10 +145,38 @@ class DonationController extends Controller
      */
     public function myDonations()
     {
-        $donations = Donation::where('user_id', Auth::id())
+        $user = Auth::user();
+
+        $donations = Donation::where(function ($q) use ($user) {
+                // Primary: donations explicitly linked by user ID (logged-in donations)
+                $q->where('user_id', $user->id);
+
+                // Fallback: donations made as guest but with matching email
+                if ($user->email) {
+                    $q->orWhere(function ($q2) use ($user) {
+                        $q2->whereNull('user_id')
+                           ->where('donorEmail', $user->email);
+                    });
+                }
+            })
             ->with('itemDonations')
             ->orderBy('created_at', 'desc')
-            ->get();
+            ->get()
+            ->map(fn ($d) => [
+                'id'               => $d->id,
+                'type'             => $d->type instanceof \App\Enums\DonationTypeEnum ? $d->type->value : $d->type,
+                'status'           => $d->status instanceof \App\Enums\DonationStatusEnum ? $d->status->value : $d->status,
+                'amount'           => $d->amount,
+                'snap_token'       => $d->snap_token,
+                'payment_channel'  => $d->payment_channel,
+                'tracking_code'    => $d->tracking_code,
+                'created_at'       => $d->created_at?->toIso8601String(),
+                'item_donations'   => $d->itemDonations->map(fn ($it) => [
+                    'id'                 => $it->id,
+                    'itemName_snapshot'  => $it->itemName_snapshot,
+                    'qty'                => $it->qty,
+                ]),
+            ]);
 
         return response()->json(['data' => $donations]);
     }

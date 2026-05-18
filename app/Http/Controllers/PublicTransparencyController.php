@@ -298,9 +298,14 @@ class PublicTransparencyController extends Controller
         );
 
         $items = collect($paginated->items())->map(function (VisitReport $report) {
+            // Derive title: prefer admin_title, fallback to first 6 words of content
+            $derivedTitle = $report->admin_title
+                ?? implode(' ', array_slice(explode(' ', $report->content ?? ''), 0, 6)) . '...';
+
             return [
                 'id'           => $report->id,
                 'visitor_name' => $this->maskName($report->user?->name ?? 'Pengunjung'),
+                'title'        => $derivedTitle,
                 'content'      => $report->content,
                 'image_path'   => $report->image_path,
                 'visit_date'   => $report->visit?->capacity?->date?->toDateString(),
@@ -352,5 +357,52 @@ class PublicTransparencyController extends Controller
         }
 
         return implode(' ', $masked);
+    }
+
+    /**
+     * GET /api/public/jejak-kebaikan
+     *
+     * Returns the 3 most recent successful donations (DANA + BARANG) for the
+     * landing page "Jejak Kebaikan" section.
+     *
+     * Name display respects donor_name_privacy:
+     *  'show' → PII-masked name via maskName()
+     *  'hide' → "Hamba Allah"
+     *  'anon' → raw donorName (alias already stored at donation time)
+     */
+    public function jejak(): JsonResponse
+    {
+        $donations = Donation::whereIn('status', [DonationStatusEnum::SUCCESS->value])
+            ->whereIn('type', [
+                DonationTypeEnum::DANA->value,
+                DonationTypeEnum::BARANG->value,
+            ])
+            ->latest('updated_at')
+            ->limit(3)
+            ->get()
+            ->map(function (Donation $donation) {
+                $privacy = $donation->donor_name_privacy ?? 'show';
+                $typeVal = $donation->type instanceof DonationTypeEnum
+                    ? $donation->type->value
+                    : $donation->type;
+
+                $displayName = match ($privacy) {
+                    'hide'  => 'Hamba Allah',
+                    'anon'  => $donation->donorName, // alias stored at submit time
+                    default => $this->maskName($donation->donorName),
+                };
+
+                return [
+                    'masked_name' => $displayName,
+                    'type'        => $typeVal,
+                    'amount'      => $typeVal === 'DANA' ? (float) $donation->amount : null,
+                    'updated_at'  => $donation->updated_at->toIso8601String(),
+                ];
+            });
+
+        return response()->json([
+            'status' => 'success',
+            'data'   => $donations,
+        ]);
     }
 }

@@ -87,7 +87,7 @@ class VisitReportService
      * @param string|null $adminNotes Optional moderation notes
      * @return VisitReport
      */
-    public function moderateReport(VisitReport $report, string $status, ?string $adminNotes = null): VisitReport
+    public function moderateReport(VisitReport $report, string $status, ?string $adminNotes = null, ?string $adminTitle = null): VisitReport
     {
         // Prevent re-moderation of already-finalized reports
         $currentStatus = $report->status instanceof ReportStatusEnum
@@ -98,10 +98,11 @@ class VisitReportService
             throw new HttpException(422, 'Laporan ini sudah dimoderasi sebelumnya.');
         }
 
-        return DB::transaction(function () use ($report, $status, $adminNotes) {
+        return DB::transaction(function () use ($report, $status, $adminNotes, $adminTitle) {
             $report->update([
                 'status'      => $status,
                 'admin_notes' => $adminNotes,
+                'admin_title' => $adminTitle,
             ]);
 
             return $report->fresh();

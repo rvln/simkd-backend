@@ -15,6 +15,7 @@ class VisitReport extends Model
         'visit_id',
         'user_id',
         'content',
+        'admin_title',
         'image_path',
         'status',
         'admin_notes',

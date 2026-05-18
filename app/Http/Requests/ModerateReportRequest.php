@@ -24,7 +24,8 @@ class ModerateReportRequest extends FormRequest
                     ReportStatusEnum::REJECTED->value,
                 ]),
             ],
-            'admin_notes' => ['nullable', 'string', 'max:2000'],
+            'admin_notes'  => ['nullable', 'string', 'max:2000'],
+            'admin_title'  => ['nullable', 'string', 'max:120'],
         ];
     }
 
