@@ -25,3 +25,11 @@ Homestead.yaml
 Thumbs.db
 .postman
 /postman
+
+# Local Testing Files
+test.html
+test.pdf
+test_pdf.php
+test-donation.pdf
+fix_capacity.php
+public/test.php
