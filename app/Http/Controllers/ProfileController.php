@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * ProfileController
@@ -30,10 +31,15 @@ class ProfileController extends Controller
         /** @var \App\Models\User $user */
         $user = Auth::user();
 
-        $user->update(array_filter([
-            'name'  => $validated['name']  ?? null,
-            'phone' => array_key_exists('phone', $validated) ? $validated['phone'] : null,
-        ], fn ($v, $k) => $k === 'name' ? $v !== null : true, ARRAY_FILTER_USE_BOTH));
+        $updateData = [];
+        if (isset($validated['name'])) {
+            $updateData['name'] = $validated['name'];
+        }
+        if (array_key_exists('phone', $validated)) {
+            $updateData['phone'] = $validated['phone'];
+        }
+
+        $user->update($updateData);
 
         // Re-fetch to include all attributes (including phone)
         $user->refresh();
@@ -46,10 +52,64 @@ class ProfileController extends Controller
                 'name'  => $user->name,
                 'email' => $user->email,
                 'phone' => $user->phone,
+                'avatar'=> $user->avatar ? asset('storage/' . $user->avatar) : null,
                 'role'  => $user->role instanceof \App\Enums\RoleEnum
                     ? $user->role->value
                     : $user->role,
             ],
+        ]);
+    }
+
+    /**
+     * POST /api/user/avatar
+     *
+     * Uploads and updates the user's avatar.
+     */
+    public function uploadAvatar(Request $request): JsonResponse
+    {
+        $request->validate([
+            'avatar' => 'required|image|mimes:jpeg,png,jpg,webp|max:2048',
+        ]);
+
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+
+        if ($request->hasFile('avatar')) {
+            // Delete old avatar if exists
+            if ($user->avatar && Storage::disk('public')->exists($user->avatar)) {
+                Storage::disk('public')->delete($user->avatar);
+            }
+
+            $path = $request->file('avatar')->store('avatars', 'public');
+            $user->update(['avatar' => $path]);
+        }
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Foto profil berhasil diperbarui.',
+            'avatar'  => $user->avatar ? asset('storage/' . $user->avatar) : null,
+        ]);
+    }
+
+    /**
+     * DELETE /api/user/avatar
+     *
+     * Removes the user's avatar.
+     */
+    public function removeAvatar(Request $request): JsonResponse
+    {
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+
+        if ($user->avatar && Storage::disk('public')->exists($user->avatar)) {
+            Storage::disk('public')->delete($user->avatar);
+        }
+
+        $user->update(['avatar' => null]);
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Foto profil berhasil dihapus.',
         ]);
     }
 }

@@ -34,6 +34,7 @@ class ReportService
             'period'        => [
                 'start'     => $start->format('d M Y'),
                 'end'       => $end->format('d M Y'),
+                'month'     => $start->locale('id')->translatedFormat('F Y'),
             ],
             'generated_at'  => Carbon::now()->format('d M Y, H:i'),
             'donations'     => null,

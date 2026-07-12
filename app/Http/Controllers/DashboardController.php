@@ -32,8 +32,32 @@ class DashboardController extends Controller
 
         // 1. Metrics
         $pendingVisits = Visit::where('status', VisitStatusEnum::PENDING)
-            ->get()
-            ->filter(fn ($visit) => !$visit->is_expired)
+            ->whereHas('capacity', function ($query) {
+                $now = \Carbon\Carbon::now('Asia/Makassar');
+                $todayDate = $now->format('Y-m-d');
+                $currentTime = $now->format('H:i:s');
+
+                // Not expired if date is in the future, OR date is today and time hasn't passed slot boundary
+                $query->whereDate('date', '>', $todayDate)
+                      ->orWhere(function ($q) use ($todayDate, $currentTime) {
+                          $q->whereDate('date', '=', $todayDate)
+                            ->where(function ($sq) use ($currentTime) {
+                                $sq->whereRaw('1 = 0'); // Base false condition
+                                if ($currentTime <= '10:00:00') {
+                                    $sq->orWhere('slot', 'MORNING');
+                                }
+                                if ($currentTime <= '15:00:00') {
+                                    $sq->orWhere('slot', 'AFTERNOON');
+                                }
+                                if ($currentTime <= '18:00:00') {
+                                    $sq->orWhere('slot', 'EVENING');
+                                }
+                                if ($currentTime <= '20:00:00') {
+                                    $sq->orWhere('slot', 'NIGHT');
+                                }
+                            });
+                      });
+            })
             ->count();
         $pendingDonations = Donation::where(function ($query) {
             // Physical goods waiting to arrive (or ANY PENDING_DELIVERY that is not expired)

@@ -58,11 +58,26 @@ class InventoryController extends Controller
     public function getPublicCatalog()
     {
         try {
-            $inventories = \App\Models\Inventory::all()
-                ->map(function ($item) {
-                    $item->remaining_need = max(0, $item->target_qty - $item->stock - $item->virtual_stock);
-                    return $item;
+            $inventories = \App\Models\Inventory::withSum(['itemDonations as virtual_stock' => function ($q) {
+                $q->whereHas('donation', function ($d) {
+                    $d->where('status', \App\Enums\DonationStatusEnum::PENDING_DELIVERY->value)
+                      ->where('expires_at', '>', now());
                 });
+            }], 'qty')
+            ->withSum(['itemDonations as terkumpul_bulan_ini' => function ($q) {
+                $q->whereHas('donation', function ($d) {
+                    $d->where('status', \App\Enums\DonationStatusEnum::SUCCESS->value);
+                })->whereMonth('created_at', now()->month)
+                  ->whereYear('created_at', now()->year);
+            }], 'qty')
+            ->get()
+            ->map(function ($item) {
+                $item->virtual_stock = (int) $item->virtual_stock;
+                $item->terkumpul_bulan_ini = (int) $item->terkumpul_bulan_ini;
+                $item->append(['status_kebutuhan', 'is_disabled', 'next_available_date']);
+                $item->remaining_need = max(0, $item->target_qty - $item->stock - $item->virtual_stock);
+                return $item;
+            });
 
             return response()->json([
                 'status' => 'success',

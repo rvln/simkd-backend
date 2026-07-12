@@ -170,10 +170,10 @@ class UserService
             $verificationUrl = "{$frontendUrl}/verify-email?token={$rawToken}";
 
             Mail::raw(
-                "Halo {$user->name},\n\nTerima kasih telah menjadi bagian dari Panti Asuhan Dr Lucas. Silakan klik tautan di bawah ini untuk memverifikasi akun Anda:\n\n{$verificationUrl}\n\nTautan ini akan kadaluarsa dalam 24 jam.\n\nJika Anda tidak merasa mendaftar, silakan abaikan email ini.",
+                "Halo {$user->name},\n\nTerima kasih telah menjadi bagian dari Panti Asuhan Dr. J. Lucas. Silakan klik tautan di bawah ini untuk memverifikasi akun Anda:\n\n{$verificationUrl}\n\nTautan ini akan kadaluarsa dalam 24 jam.\n\nJika Anda tidak merasa mendaftar, silakan abaikan email ini.",
                 function ($message) use ($user) {
                     $message->to($user->email)
-                            ->subject('Verifikasi Email - Panti Asuhan Dr Lucas');
+                            ->subject('Verifikasi Email - Panti Asuhan Dr. J. Lucas');
                 }
             );
         } catch (\Throwable $e) {
@@ -258,10 +258,10 @@ class UserService
             $resetUrl = "{$frontendUrl}/reset-password?token={$token}&email=" . urlencode($user->email);
 
             Mail::raw(
-                "Halo {$user->name},\n\nKami menerima permintaan untuk mereset kata sandi akun Anda di Panti Asuhan Dr Lucas.\n\nSilakan klik tautan berikut untuk mengatur kata sandi baru:\n\n{$resetUrl}\n\nTautan ini berlaku selama 60 menit. Jika Anda tidak meminta reset kata sandi, silakan abaikan email ini.\n\nSalam,\nTim Panti Asuhan Dr Lucas",
+                "Halo {$user->name},\n\nKami menerima permintaan untuk mereset kata sandi akun Anda di Panti Asuhan Dr. J. Lucas.\n\nSilakan klik tautan berikut untuk mengatur kata sandi baru:\n\n{$resetUrl}\n\nTautan ini berlaku selama 60 menit. Jika Anda tidak meminta reset kata sandi, silakan abaikan email ini.\n\nSalam,\nTim Panti Asuhan Dr. J. Lucas",
                 function ($message) use ($user) {
                     $message->to($user->email)
-                            ->subject('Reset Kata Sandi - Panti Asuhan Dr Lucas');
+                            ->subject('Reset Kata Sandi - Panti Asuhan Dr. J. Lucas');
                 }
             );
         } catch (\Throwable $e) {

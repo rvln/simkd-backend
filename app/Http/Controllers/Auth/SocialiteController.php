@@ -40,7 +40,8 @@ class SocialiteController extends Controller
             $frontendUrl = env('FRONTEND_URL', 'http://localhost:3000');
             
             // Redirect ke halaman khusus di frontend untuk menyimpan token
-            return redirect()->to("{$frontendUrl}/auth/callback?token={$token}");
+            $encodedToken = urlencode($token);
+            return redirect()->to("{$frontendUrl}/auth/callback#token={$encodedToken}");
         } catch (\Exception $e) {
             $frontendUrl = env('FRONTEND_URL', 'http://localhost:3000');
             return redirect()->to("{$frontendUrl}/login?error=social_auth_failed");

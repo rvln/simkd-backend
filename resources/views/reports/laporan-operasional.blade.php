@@ -15,7 +15,7 @@
 
         /* ── Header ── */
         .report-header {
-            background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%);
+            background-color: #0d9488;
             color: #ffffff;
             padding: 28px 32px;
             margin-bottom: 24px;
@@ -32,11 +32,13 @@
             margin-bottom: 12px;
         }
         .report-meta {
-            display: flex;
-            gap: 32px;
             font-size: 9.5px;
             opacity: 0.9;
             margin-top: 8px;
+        }
+        .report-meta div {
+            display: inline-block;
+            margin-right: 32px;
         }
         .report-meta span { font-weight: 600; }
 
@@ -167,14 +169,14 @@
 {{-- ════════════════════════════════════════════
      HEADER
      ════════════════════════════════════════════ --}}
-<div class="report-header">
-    <h1>Laporan Operasional SIMDK</h1>
-    <p class="subtitle">Panti Asuhan Dr. Lucas — Sistem Informasi Manajemen Donasi dan Kunjungan</p>
-    <div class="report-meta">
-        <div>Periode: <span>{{ $data['period']['start'] }} – {{ $data['period']['end'] }}</span></div>
-        <div>Dicetak pada: <span>{{ $data['generated_at'] }}</span></div>
+<div style="margin: 0 32px 24px 32px; padding-top: 28px; padding-bottom: 12px; border-bottom: 2px solid #0d9488;">
+    <h1 style="font-size: 22px; font-weight: 700; margin: 0 0 6px 0; letter-spacing: 0.5px; color: #0d9488;">Rekapan Data Laporan Panti Asuhan Dr. J. Lucas ({{ $data['period']['month'] }})</h1>
+    <p style="font-size: 13px; margin: 0 0 12px 0; color: #4b5563; font-weight: 600;">-- dari {{ $data['period']['start'] }} sampai {{ $data['period']['end'] }}</p>
+    
+    <div style="font-size: 10px; color: #6b7280; width: 100%;">
+        <span style="margin-right: 24px;">Dicetak pada: <strong style="color: #374151;">{{ $data['generated_at'] }}</strong></span>
         @if ($generatedBy)
-            <div>Dicetak oleh: <span>{{ $generatedBy }}</span></div>
+        <span>Dicetak oleh: <strong style="color: #374151;">{{ $generatedBy }}</strong></span>
         @endif
     </div>
 </div>
@@ -232,7 +234,7 @@
                     <td style="text-align:right; font-weight:600;">{{ $count }}</td>
                 </tr>
             @empty
-                <tr><td colspan="2" class="empty-state">Tidak ada data donasi dana pada periode ini.</td></tr>
+                <tr><td colspan="2" class="empty-state">Tidak ada data donasi dana dari filter tanggal mulai {{ $data['period']['start'] }} sampai tanggal akhir {{ $data['period']['end'] }}.</td></tr>
             @endforelse
         </tbody>
     </table>
@@ -286,7 +288,7 @@
                     <td style="text-align:right; font-weight:600;">{{ $count }}</td>
                 </tr>
             @empty
-                <tr><td colspan="2" class="empty-state">Tidak ada data donasi barang pada periode ini.</td></tr>
+                <tr><td colspan="2" class="empty-state">Tidak ada data donasi barang dari filter tanggal mulai {{ $data['period']['start'] }} sampai tanggal akhir {{ $data['period']['end'] }}.</td></tr>
             @endforelse
         </tbody>
     </table>
@@ -345,7 +347,7 @@
                     <td style="text-align:right; font-weight:600;">{{ $count }}</td>
                 </tr>
             @empty
-                <tr><td colspan="2" class="empty-state">Tidak ada data kunjungan pada periode ini.</td></tr>
+                <tr><td colspan="2" class="empty-state">Tidak ada data kunjungan dari filter tanggal mulai {{ $data['period']['start'] }} sampai tanggal akhir {{ $data['period']['end'] }}.</td></tr>
             @endforelse
         </tbody>
     </table>
@@ -363,7 +365,7 @@
 
     @if ($distributions['total'] > 0)
         <p style="font-size:9px; color:#6b7280; margin-bottom:8px;">
-            Total {{ $distributions['total'] }} catatan distribusi pada periode ini.
+            Total {{ $distributions['total'] }} catatan distribusi dari filter tanggal mulai {{ $data['period']['start'] }} sampai tanggal akhir {{ $data['period']['end'] }}.
         </p>
         <table>
             <thead>
@@ -390,7 +392,7 @@
             </tbody>
         </table>
     @else
-        <div class="empty-state">Tidak ada catatan distribusi pada periode ini.</div>
+        <div class="empty-state">Tidak ada catatan distribusi dari filter tanggal mulai {{ $data['period']['start'] }} sampai tanggal akhir {{ $data['period']['end'] }}.</div>
     @endif
 </div>
 @endif

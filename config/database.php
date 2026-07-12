@@ -99,6 +99,36 @@ return [
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
+        // ── Named connections for MigrateDataToSupabase command ──────────────
+        'mysql_local' => [
+            'driver'      => 'mysql',
+            'host'        => env('MYSQL_LOCAL_HOST', '127.0.0.1'),
+            'port'        => env('MYSQL_LOCAL_PORT', '3306'),
+            'database'    => env('MYSQL_LOCAL_DATABASE', 'simdk'),
+            'username'    => env('MYSQL_LOCAL_USERNAME', 'root'),
+            'password'    => env('MYSQL_LOCAL_PASSWORD', ''),
+            'charset'     => 'utf8mb4',
+            'collation'   => 'utf8mb4_unicode_ci',
+            'prefix'      => '',
+            'strict'      => true,
+            'engine'      => null,
+        ],
+
+        'pgsql_supabase' => [
+            'driver'      => 'pgsql',
+            'host'        => env('PGSQL_SUPABASE_HOST', '127.0.0.1'),
+            'port'        => env('PGSQL_SUPABASE_PORT', '5432'),
+            'database'    => env('PGSQL_SUPABASE_DATABASE', 'postgres'),
+            'username'    => env('PGSQL_SUPABASE_USERNAME', 'root'),
+            'password'    => env('PGSQL_SUPABASE_PASSWORD', ''),
+            'charset'     => 'utf8',
+            'prefix'      => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode'     => 'prefer',
+        ],
+
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),
@@ -113,6 +143,7 @@ return [
             // 'encrypt' => env('DB_ENCRYPT', 'yes'),
             // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
         ],
+
 
     ],
 

@@ -7,6 +7,7 @@ use App\Models\Inventory;
 use App\Models\RejectedLog;
 use App\Enums\DonationStatusEnum;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class DonationValidationService
@@ -25,46 +26,52 @@ class DonationValidationService
             $query->where('type', $filters['type']);
         }
 
-        if (!empty($filters['status']) && $filters['status'] !== 'ALL') {
-            if ($filters['status'] === 'EXPIRED') {
-                $query->where('status', DonationStatusEnum::PENDING_DELIVERY->value)
+        if (!empty($filters['status'])) {
+            $query->where(function ($q) use ($filters) {
+                if ($filters['status'] === 'ALL') {
+                    // Do not apply any status filtering
+                } elseif ($filters['status'] === 'EXPIRED') {
+                    $q->where('status', DonationStatusEnum::PENDING_DELIVERY->value)
                       ->whereNotNull('expires_at')
                       ->where('expires_at', '<', now());
-            } elseif ($filters['status'] === 'PENDING_DELIVERY') {
-                $query->where(function ($q) {
-                    $q->where('status', DonationStatusEnum::PENDING_DELIVERY->value)
-                      ->where(function ($sq) {
-                          $sq->whereNull('expires_at')
-                             ->orWhere('expires_at', '>=', now());
-                      });
-                })->orWhere(function ($q) {
+                } elseif ($filters['status'] === 'PENDING_DELIVERY') {
+                    $q->where(function ($sq) {
+                        $sq->where('status', DonationStatusEnum::PENDING_DELIVERY->value)
+                          ->where(function ($ssq) {
+                              $ssq->whereNull('expires_at')
+                                 ->orWhere('expires_at', '>=', now());
+                          });
+                    })->orWhere(function ($sq) {
+                        $sq->where('status', DonationStatusEnum::PENDING->value)
+                          ->where('payment_channel', 'MANUAL');
+                    });
+                } elseif ($filters['status'] === 'PENDING_MANUAL') {
+                    // Synthetic filter from DANA tab: only PENDING + MANUAL channel
                     $q->where('status', DonationStatusEnum::PENDING->value)
                       ->where('payment_channel', 'MANUAL');
-                });
-            } elseif ($filters['status'] === 'PENDING_MANUAL') {
-                // Synthetic filter from DANA tab: only PENDING + MANUAL channel
-                $query->where('status', DonationStatusEnum::PENDING->value)
-                      ->where('payment_channel', 'MANUAL');
-            } elseif ($filters['status'] === 'EXPIRED_FAILED') {
-                // Synthetic filter from DANA tab: terminal states
-                $query->whereIn('status', [
-                    DonationStatusEnum::EXPIRED->value,
-                    DonationStatusEnum::FAILED->value,
-                ]);
-            } else {
-                $query->where('status', $filters['status']);
-            }
+                } elseif ($filters['status'] === 'EXPIRED_FAILED') {
+                    // Synthetic filter from DANA tab: terminal states
+                    $q->whereIn('status', [
+                        DonationStatusEnum::EXPIRED->value,
+                        DonationStatusEnum::FAILED->value,
+                    ]);
+                } else {
+                    $q->where('status', $filters['status']);
+                }
+            });
         } elseif (empty($filters['status'])) {
             // Default: active PENDING_DELIVERY and active PENDING (MANUAL)
             $query->where(function ($q) {
-                $q->where('status', DonationStatusEnum::PENDING_DELIVERY->value)
-                  ->where(function ($sq) {
-                      $sq->whereNull('expires_at')
-                         ->orWhere('expires_at', '>=', now());
-                  });
-            })->orWhere(function ($q) {
-                $q->where('status', DonationStatusEnum::PENDING->value)
-                  ->where('payment_channel', 'MANUAL');
+                $q->where(function ($sq) {
+                    $sq->where('status', DonationStatusEnum::PENDING_DELIVERY->value)
+                      ->where(function ($ssq) {
+                          $ssq->whereNull('expires_at')
+                             ->orWhere('expires_at', '>=', now());
+                      });
+                })->orWhere(function ($sq) {
+                    $sq->where('status', DonationStatusEnum::PENDING->value)
+                      ->where('payment_channel', 'MANUAL');
+                });
             });
         }
 
@@ -72,9 +79,9 @@ class DonationValidationService
             $query->where(function ($q) use ($filters) {
                 $q->where('tracking_code', 'LIKE', '%' . $filters['search'] . '%')
                   ->orWhere('donorName', 'LIKE', '%' . $filters['search'] . '%')
-                  ->orWhere(function ($sq) use ($filters) {
-                      $sq->where('type', 'DANA')
-                         ->where('id', 'LIKE', '%' . $filters['search'] . '%');
+                  ->orWhere('id', 'LIKE', '%' . $filters['search'] . '%')
+                  ->orWhereHas('itemDonations', function ($sq) use ($filters) {
+                      $sq->where('itemName_snapshot', 'LIKE', '%' . $filters['search'] . '%');
                   });
             });
         }
@@ -150,6 +157,10 @@ class DonationValidationService
             $donation->status = DonationStatusEnum::SUCCESS->value;
             $donation->save();
 
+            if ($donation->donorEmail) {
+                \Illuminate\Support\Facades\Mail::to($donation->donorEmail)->queue(new \App\Mail\ItemDonationApprovedMail($donation));
+            }
+
             return $donation->fresh()->toArray();
         });
     }
@@ -192,6 +203,14 @@ class DonationValidationService
             $donation->status = DonationStatusEnum::REJECTED->value;
             $donation->save();
 
+            // Delete physical image files
+            foreach ($donation->itemDonations as $item) {
+                if ($item->photo_url) {
+                    Storage::disk('public')->delete($item->photo_url);
+                    $item->update(['photo_url' => null]);
+                }
+            }
+
             // Audit trail — AGENTS.md §3: donation_id FK is mandatory
             $itemNameSnapshot = $donation->itemDonations->first()?->itemName_snapshot ?? 'Donasi Barang';
 
@@ -201,6 +220,10 @@ class DonationValidationService
                 'reason'      => $reason,
                 'logged_by'   => $loggedBy,
             ]);
+
+            if ($donation->donorEmail) {
+                \Illuminate\Support\Facades\Mail::to($donation->donorEmail)->queue(new \App\Mail\ItemDonationRejectedMail($donation, $reason));
+            }
 
             return $donation->fresh()->toArray();
         });

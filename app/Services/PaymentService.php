@@ -9,9 +9,12 @@ use App\Enums\DonationTypeEnum;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Midtrans\Config;
 use Midtrans\Snap;
+use Midtrans\Transaction;
+use App\Mail\FinancialDonationSuccessMail;
 
 class PaymentService
 {
@@ -61,6 +64,13 @@ class PaymentService
                 if ($paymentChannel === 'MANUAL') {
                     // tracking_code MUST remain null for financial donations.
                     // DO NOT call Midtrans API.
+                    $adminEmail = env('ADMIN_EMAIL', 'fravelrama88@gmail.com');
+                    if ($adminEmail) {
+                        \Illuminate\Support\Facades\Mail::to($adminEmail)->queue(new \App\Mail\AdminNewDonationNotification($donation));
+                    }
+                    if ($donation->donorEmail) {
+                        \Illuminate\Support\Facades\Mail::to($donation->donorEmail)->queue(new \App\Mail\ManualDonationSubmittedMail($donation));
+                    }
                     return [
                         'donation' => $donation,
                     ];
@@ -68,6 +78,10 @@ class PaymentService
 
                 // Midtrans logic
                 $orderId = 'DON-' . Str::uuid();
+
+                $frontendUrl = request()->header('origin') ?? config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000'));
+                // Remove trailing slash if present
+                $frontendUrl = rtrim($frontendUrl, '/');
 
                 $params = [
                     'transaction_details' => [
@@ -79,6 +93,21 @@ class PaymentService
                         'email'      => $donorData['donorEmail'],
                         'phone'      => $donorData['donorPhone'],
                     ],
+                    // Redirect URLs: Midtrans will redirect the browser here after payment.
+                    // This fixes the "https://example.com" redirect bug (BUG-03 Scenario B).
+                    // Using $donation->id (UUID) so the invoice page can poll by its primary key.
+                    'callbacks' => [
+                        'finish'   => "{$frontendUrl}/donasi/invoice/{$donation->id}",
+                        'unfinish' => "{$frontendUrl}/donasi/invoice/{$donation->id}",
+                        'error'    => "{$frontendUrl}/donasi/invoice/{$donation->id}",
+                    ],
+                    'gopay' => [
+                        'enable_callback' => true,
+                        'callback_url' => "{$frontendUrl}/donasi/invoice/{$donation->id}"
+                    ],
+                    'shopeepay' => [
+                        'callback_url' => "{$frontendUrl}/donasi/invoice/{$donation->id}"
+                    ]
                 ];
 
                 // Request Token from Midtrans
@@ -89,6 +118,17 @@ class PaymentService
                     'order_id'   => $orderId,
                     'snap_token' => $snapToken,
                 ]);
+
+                $adminEmail = env('ADMIN_EMAIL', 'fravelrama88@gmail.com');
+                if ($adminEmail) {
+                    \Illuminate\Support\Facades\Mail::to($adminEmail)->queue(new \App\Mail\AdminNewDonationNotification($donation));
+                }
+
+                // Send email to donor if email is provided
+                if (!empty($donorData['donorEmail'])) {
+                    $invoiceUrl = "{$frontendUrl}/donasi/invoice/{$donation->id}";
+                    \Illuminate\Support\Facades\Mail::to($donorData['donorEmail'])->queue(new \App\Mail\PendingPaymentMail($donation, $invoiceUrl));
+                }
 
                 return [
                     'snap_token' => $snapToken,
@@ -181,6 +221,11 @@ class PaymentService
         'payment_type'  => $payload['payment_type'] ?? $lockedDonation->payment_type,
         'tracking_code' => $trackingCode,
     ]);
+
+    // Dispatch email asynchronously if email is present
+    if ($lockedDonation->donorEmail) {
+        Mail::to($lockedDonation->donorEmail)->queue(new FinancialDonationSuccessMail($lockedDonation));
+    }
 });
 
         } elseif ($transactionStatus === 'expire') {
@@ -215,6 +260,76 @@ class PaymentService
             'type'                => $donation->type,
             'distribution_status' => $distributionStatus,
         ];
+    }
+
+    /**
+     * Pull-based payment status sync.
+     * Queries Midtrans Transaction Status API directly for the given donation.
+     * Used as a fallback when the webhook (push) has not arrived or failed.
+     * Safe to call multiple times — idempotency is enforced via lockForUpdate().
+     *
+     * @param  Donation $donation
+     * @return Donation  Fresh donation instance after possible status update.
+     */
+    public function syncPaymentStatus(Donation $donation): Donation
+    {
+        // Only sync if still PENDING and has a Midtrans order_id
+        if ($donation->status->value !== DonationStatusEnum::PENDING->value) {
+            return $donation;
+        }
+
+        if (!$donation->order_id) {
+            return $donation;
+        }
+
+        try {
+            // Query Midtrans Transaction Status API
+            $status            = Transaction::status($donation->order_id);
+            $transactionStatus = $status->transaction_status ?? null;
+
+            if ($transactionStatus === 'settlement' || $transactionStatus === 'capture') {
+                DB::transaction(function () use ($donation, $status) {
+                    $locked = Donation::where('id', $donation->id)
+                        ->lockForUpdate()
+                        ->first();
+
+                    // Guard: another process (webhook) may have already updated it
+                    if ($locked->status->value !== DonationStatusEnum::PENDING->value) {
+                        return;
+                    }
+
+                    $trackingCode = $this->generateTrackingCode();
+
+                    $locked->update([
+                        'status'        => DonationStatusEnum::SUCCESS->value,
+                        'tracking_code' => $trackingCode,
+                        'payment_type'  => $status->payment_type ?? $locked->payment_type,
+                    ]);
+
+                    if ($locked->donorEmail) {
+                        Mail::to($locked->donorEmail)->queue(
+                            new FinancialDonationSuccessMail($locked->fresh())
+                        );
+                    }
+                });
+
+                return $donation->fresh();
+
+            } elseif ($transactionStatus === 'expire') {
+                $donation->update(['status' => DonationStatusEnum::EXPIRED->value]);
+                return $donation->fresh();
+
+            } elseif (in_array($transactionStatus, ['cancel', 'deny'])) {
+                $donation->update(['status' => DonationStatusEnum::FAILED->value]);
+                return $donation->fresh();
+            }
+        } catch (Exception $e) {
+            // Non-fatal: log and return the original donation.
+            // Frontend polling will retry in 5s.
+            Log::warning("Midtrans status sync failed for order_id={$donation->order_id}: " . $e->getMessage());
+        }
+
+        return $donation;
     }
 
     /**

@@ -17,6 +17,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Frontend Application URL
+    |--------------------------------------------------------------------------
+    |
+    | This is the base URL of the Next.js frontend application. Used to
+    | generate absolute redirect URLs for Midtrans payment callbacks and
+    | other cross-origin redirects. Set this in your ".env" file as FRONTEND_URL.
+    |
+    */
+
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:3000'),
+
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
     |

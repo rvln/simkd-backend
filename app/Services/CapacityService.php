@@ -6,8 +6,12 @@ use App\Models\Visit;
 use App\Models\Capacity;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Mail;
 use App\Enums\VisitStatusEnum;
 use App\Enums\DonationStatusEnum;
+use App\Mail\VisitSubmittedMail;
+use App\Mail\VisitApprovedMail;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class CapacityService
@@ -26,7 +30,7 @@ class CapacityService
      * @param string $capacityId  Target capacity slot UUID.
      * @return Visit
      */
-    public function createVisitRequest(string $userId, string $capacityId, string $visitorType = 'Individu', ?string $proposalFilePath = null): Visit
+    public function createVisitRequest(string $userId, string $capacityId, string $visitorType = 'Individu', ?string $proposalFilePath = null, ?string $visitorName = null, ?string $purpose = null): Visit
     {
         // Authentication State Constraint (AGENTS.md §3)
         $user = User::find($userId);
@@ -50,13 +54,65 @@ class CapacityService
             throw new HttpException(422, 'Selected slot is fully booked.');
         }
 
-        return Visit::create([
-            'user_id'     => $userId,
-            'capacity_id' => $capacityId,
-            'visitor_type' => $visitorType,
-            'proposal_file_path' => $proposalFilePath,
-            'status'      => VisitStatusEnum::PENDING->value,
-        ]);
+        // Feature P1: 1 User 1 Sesi per Hari
+        // User cannot have another PENDING or APPROVED visit on the same date.
+        $existingVisit = Visit::where('user_id', $userId)
+            ->whereIn('status', [VisitStatusEnum::PENDING->value, VisitStatusEnum::APPROVED->value])
+            ->whereHas('capacity', function ($query) use ($capacity) {
+                $query->where('date', $capacity->date);
+            })
+            ->first();
+
+        if ($existingVisit) {
+            throw new HttpException(422, 'Anda sudah memiliki pengajuan kunjungan yang aktif pada tanggal ini. Maksimal 1 sesi per hari.');
+        }
+
+        // Feature P1: Limit 1 Institution per session
+        if ($visitorType === 'Lembaga/Instansi') {
+            $existingInstitution = Visit::where('capacity_id', $capacityId)
+                ->where('visitor_type', 'Lembaga/Instansi')
+                ->where('status', '!=', VisitStatusEnum::REJECTED->value)
+                ->first();
+
+            if ($existingInstitution) {
+                throw new HttpException(422, 'Sesi ini sudah dibooking oleh instansi lain. Silakan pilih sesi yang berbeda.');
+            }
+        }
+
+        DB::beginTransaction();
+        try {
+            // Re-fetch capacity with pessimistic write lock (AGENTS.md §3 Concurrency Rule)
+            $lockedCapacity = Capacity::lockForUpdate()->find($capacityId);
+
+            if ($lockedCapacity->quota <= $lockedCapacity->booked) {
+                throw new HttpException(422, 'Selected slot is fully booked due to concurrent request.');
+            }
+
+            $visit = Visit::create([
+                'user_id'     => $userId,
+                'capacity_id' => $capacityId,
+                'visitor_type' => $visitorType,
+                'visitor_name' => $visitorName,
+                'purpose'      => $purpose,
+                'proposal_file_path' => $proposalFilePath,
+                'status'      => VisitStatusEnum::PENDING->value,
+            ]);
+            
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+        
+        $visit->load('capacity');
+        Mail::to($user->email)->queue(new VisitSubmittedMail($visit, $user));
+        
+        $adminEmail = env('ADMIN_EMAIL', 'fravelrama88@gmail.com');
+        if ($adminEmail) {
+            Mail::to($adminEmail)->queue(new \App\Mail\AdminNewVisitNotification($visit));
+        }
+
+        return $visit;
     }
 
     /**
@@ -81,7 +137,8 @@ class CapacityService
                 throw new HttpException(404, 'Visit not found.');
             }
 
-            if ($visit->status !== VisitStatusEnum::PENDING->value) {
+            $statusValue = $visit->status instanceof \BackedEnum ? $visit->status->value : $visit->status;
+            if ($statusValue !== VisitStatusEnum::PENDING->value) {
                 throw new HttpException(422, 'Only pending visits can be approved.');
             }
 
@@ -106,7 +163,12 @@ class CapacityService
             // Update visit status to approved
             $visit->update(['status' => VisitStatusEnum::APPROVED->value]);
 
-            return $visit->load('capacity')->toArray();
+            $visit->load(['capacity', 'user']);
+            if ($visit->user && $visit->user->email) {
+                Mail::to($visit->user->email)->queue(new VisitApprovedMail($visit));
+            }
+
+            return $visit->toArray();
         });
     }
 
@@ -129,7 +191,8 @@ class CapacityService
                 throw new HttpException(404, 'Visit not found.');
             }
 
-            if ($visit->status !== VisitStatusEnum::PENDING->value) {
+            $statusValue = $visit->status instanceof \BackedEnum ? $visit->status->value : $visit->status;
+            if ($statusValue !== VisitStatusEnum::PENDING->value) {
                 throw new HttpException(422, 'Only pending visits can be rejected.');
             }
 
@@ -139,6 +202,12 @@ class CapacityService
             $donation = $visit->donation;
             if ($donation && $donation->status->value === DonationStatusEnum::PENDING_DELIVERY->value) {
                 $donation->update(['status' => DonationStatusEnum::REJECTED->value]);
+                foreach ($donation->itemDonations as $item) {
+                    if ($item->photo_url) {
+                        Storage::disk('public')->delete($item->photo_url);
+                        $item->update(['photo_url' => null]);
+                    }
+                }
             }
 
             return $visit->toArray();
@@ -254,18 +323,36 @@ class CapacityService
                 throw new HttpException(422, 'Hanya kunjungan berstatus NEEDS_RESCHEDULE yang dapat di-reschedule.');
             }
 
-            // 2. Pessimistic lock on NEW capacity + availability check
-            $newCapacity = Capacity::where('id', $newCapacityId)
+            // 2. Pessimistic lock on BOTH capacities in deterministic order (by ID) to prevent deadlocks
+            $oldCapacityId = $visit->capacity_id;
+            
+            if ($oldCapacityId === $newCapacityId) {
+                throw new HttpException(422, 'Slot baru tidak boleh sama dengan slot lama.');
+            }
+
+            $capacities = Capacity::whereIn('id', [$oldCapacityId, $newCapacityId])
+                ->orderBy('id')
                 ->lockForUpdate()
-                ->first();
+                ->get()
+                ->keyBy('id');
+
+            $oldCapacity = $capacities->get($oldCapacityId);
+            $newCapacity = $capacities->get($newCapacityId);
 
             if (!$newCapacity) {
                 throw new HttpException(404, 'Slot kapasitas baru tidak ditemukan.');
+            }
+            if (!$oldCapacity) {
+                throw new HttpException(404, 'Slot kapasitas lama tidak ditemukan.');
             }
 
             if ($newCapacity->booked >= $newCapacity->quota) {
                 throw new HttpException(422, 'Slot yang dipilih sudah penuh.');
             }
+
+            // 3. Transfer booked count (Safe because of lockForUpdate)
+            $oldCapacity->decrement('booked');
+            $newCapacity->increment('booked');
 
             // 4. Update visit record
             $visit->update([

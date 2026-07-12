@@ -42,7 +42,7 @@ Route::get('/capacities', [\App\Http\Controllers\CapacityController::class, 'ind
 Route::get('/public/katalog-kebutuhan', [InventoryController::class, 'getPublicCatalog']);
 Route::post('/public/donasi-barang', [PublicDonationController::class, 'store'])->middleware('throttle:10,1');
 Route::get('/public/donasi-barang/{tracking_code}', [PublicDonationController::class, 'show']);
-Route::patch('/public/donations/{id}/cancel', [PublicDonationController::class, 'cancel']);
+Route::patch('/public/donations/{id}/cancel', [PublicDonationController::class, 'cancel'])->middleware('throttle:5,1');
 Route::get('/public/donations/{id}/invoice', [PublicDonationController::class, 'showInvoice']);
 Route::get('/public/donations/{id}/invoice/download', [PublicDonationController::class, 'downloadPdf']);
 
@@ -77,6 +77,7 @@ Route::middleware('auth:sanctum')->group(function () {
             'name'  => $user->name,
             'email' => $user->email,
             'phone' => $user->phone,
+            'avatar'=> $user->avatar ? asset('storage/' . $user->avatar) : null,
             'role'  => $user->role instanceof \App\Enums\RoleEnum ? $user->role->value : $user->role,
             'email_verified_at' => $user->email_verified_at,
         ]]);
@@ -84,6 +85,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Profile Update (name & phone)
     Route::patch('/user/profile', [ProfileController::class, 'update']);
+    Route::post('/user/avatar', [ProfileController::class, 'uploadAvatar']);
+    Route::delete('/user/avatar', [ProfileController::class, 'removeAvatar']);
+
+    // Ticker Stats
+    Route::get('/user/ticker-stats', [\App\Http\Controllers\TickerController::class, 'index']);
 
     // Dashboard BFF
     Route::get('/dashboard/overview', [\App\Http\Controllers\DashboardController::class, 'getOverview']);

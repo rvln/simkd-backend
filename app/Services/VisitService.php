@@ -16,11 +16,11 @@ class VisitService
      */
     public function getVisits(array $filters = [])
     {
-        $query = Visit::with(['user', 'capacity']);
+        $query = Visit::with(['user', 'capacity', 'donation.itemDonations']);
 
         if (!empty($filters['status']) && $filters['status'] !== 'ALL') {
             $query->where('status', $filters['status']);
-        } elseif (empty($filters['status']))
+        }
 
         if (!empty($filters['date'])) {
             $query->whereHas('capacity', function ($q) use ($filters) {
@@ -29,10 +29,10 @@ class VisitService
         }
 
         if (!empty($filters['search'])) {
-    $query->whereHas('user', function ($q) use ($filters) {
-        $q->where('name', 'LIKE', '%' . $filters['search'] . '%');
-    });
-}
+            $query->whereHas('user', function ($q) use ($filters) {
+                $q->where('name', 'LIKE', '%' . $filters['search'] . '%');
+            });
+        }
 
         return $query->orderBy('created_at', 'desc')->get();
     }
@@ -72,6 +72,11 @@ class VisitService
                 $visit->confirmed_time = $confirmedTime;
             }
             $visit->save();
+
+            $visit->load(['capacity', 'user']);
+            if ($visit->user && $visit->user->email) {
+                \Illuminate\Support\Facades\Mail::to($visit->user->email)->queue(new \App\Mail\VisitApprovedMail($visit));
+            }
 
             return $visit;
         });
@@ -116,6 +121,11 @@ class VisitService
             $visit->rejection_reason = $reason;
             $visit->is_rescheduled = false; // Strict state reset
             $visit->save();
+
+            $visit->load(['user']);
+            if ($visit->user && $visit->user->email) {
+                \Illuminate\Support\Facades\Mail::to($visit->user->email)->queue(new \App\Mail\VisitRejectedMail($visit));
+            }
 
             return $visit;
         });
@@ -170,6 +180,11 @@ class VisitService
             $visit->status = VisitStatusEnum::NEEDS_RESCHEDULE;
             $visit->admin_notes = $recommendationNotes;
             $visit->save();
+
+            $visit->load(['user']);
+            if ($visit->user && $visit->user->email) {
+                \Illuminate\Support\Facades\Mail::to($visit->user->email)->queue(new \App\Mail\VisitRescheduleMail($visit));
+            }
 
             return $visit;
         });

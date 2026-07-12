@@ -13,8 +13,10 @@ class Visit extends Model
 
     protected $fillable = [
         'user_id',
+        'visitor_name',
         'capacity_id',
         'visitor_type',
+        'purpose',
         'proposal_file_path',
         'status',
         'confirmed_time',

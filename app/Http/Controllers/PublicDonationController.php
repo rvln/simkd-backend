@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use App\Models\Donation;
 use App\Services\InventoryService;
+use App\Services\PaymentService;
 use Illuminate\Support\Facades\DB;
 use App\Enums\DonationStatusEnum;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -13,7 +14,10 @@ use App\Enums\DonationTypeEnum;
 
 class PublicDonationController extends Controller
 {
-    public function __construct(private InventoryService $inventoryService) {}
+    public function __construct(
+        private InventoryService $inventoryService,
+        private PaymentService   $paymentService,
+    ) {}
 
     /**
      * Store a newly created item donation from the public form.
@@ -31,6 +35,7 @@ class PublicDonationController extends Controller
             'items.*.id'     => 'required|string',
             'items.*.name'   => 'required_if:items.*.id,MANUAL|string|max:255',
             'items.*.qty'    => 'required|integer|min:1',
+            'items.*.image'  => 'nullable|image|max:5120',
         ]);
 
         try {
@@ -81,8 +86,17 @@ class PublicDonationController extends Controller
      */
     public function cancel(Request $request, $id)
     {
-        return DB::transaction(function () use ($id) {
+        $request->validate([
+            'tracking_code' => 'required|string',
+        ]);
+
+        return DB::transaction(function () use ($request, $id) {
             $donation = Donation::findOrFail($id);
+
+            // Constant-time string comparison for tracking_code security
+            if (!hash_equals($donation->tracking_code, $request->input('tracking_code'))) {
+                return response()->json(['message' => 'Tracking code tidak valid atau Anda tidak memiliki akses untuk membatalkan donasi ini.'], 403);
+            }
 
             if ($donation->status->value !== DonationStatusEnum::PENDING->value) {
                 return response()->json(['message' => 'Hanya donasi dengan status PENDING yang dapat dibatalkan.'], 422);
@@ -96,7 +110,8 @@ class PublicDonationController extends Controller
 
     /**
      * Show invoice data for a specific financial donation.
-     * Incorporates polling mechanism to prevent Midtrans webhook race condition.
+     * Returns data immediately regardless of payment status.
+     * Status label is resolved here so frontend can display the correct state.
      */
     public function showInvoice($id)
     {
@@ -110,36 +125,45 @@ class PublicDonationController extends Controller
             return response()->json(['message' => 'Faktur ini bukan untuk donasi finansial.'], 403);
         }
 
-        // Webhook Race Condition Guard
+        // Pull-based sync: if still PENDING, query Midtrans API directly for latest status.
+        // This is the fallback for when the webhook (push) has not arrived or failed.
         if ($donation->status->value === DonationStatusEnum::PENDING->value) {
-            return response()->json([
-                'status' => 'PROCESSING',
-                'message' => 'Waiting for payment gateway confirmation...'
-            ], 202);
+            $donation = $this->paymentService->syncPaymentStatus($donation);
         }
 
-        if ($donation->status->value !== DonationStatusEnum::SUCCESS->value) {
-            return response()->json(['message' => 'Faktur tidak valid (Kedaluwarsa/Batal).'], 403);
-        }
+        // Resolve a human-readable status label
+        $statusValue = $donation->status->value;
+        $statusLabel = match ($statusValue) {
+            'SUCCESS'  => 'Pembayaran Berhasil',
+            'PENDING'  => 'Menunggu Pembayaran',
+            'FAILED'   => 'Pembayaran Gagal',
+            'EXPIRED'  => 'Kadaluarsa',
+            default    => $statusValue,
+        };
 
-        // PII Masking
+        // PII Masking for public-facing fields
         $donorEmail = $donation->donorEmail ? $this->maskEmail($donation->donorEmail) : null;
         $donorPhone = $donation->donorPhone ? $this->maskPhone($donation->donorPhone) : null;
 
         return response()->json([
-            'status' => 'SUCCESS',
-            'data' => [
-                'id' => $donation->id,
-                'tracking_code' => $donation->tracking_code ?? $donation->order_id,
-                'amount' => $donation->amount,
-                'payment_type' => $donation->payment_type,
-                'created_at' => $donation->created_at,
-                'donorName' => $donation->donorName,
-                'donorEmail' => $donorEmail,
-                'donorPhone' => $donorPhone,
+            'status' => 'ok',
+            'data'   => [
+                'id'             => $donation->id,
+                'tracking_code'  => $donation->tracking_code ?? $donation->order_id,
+                'amount'         => $donation->amount,
+                'payment_type'   => $donation->payment_type,
+                'payment_status' => $statusValue,
+                'status_label'   => $statusLabel,
+                'created_at'     => $donation->created_at,
+                'donorName'      => $donation->donorName,
+                'donorEmail'     => $donorEmail,
+                'donorPhone'     => $donorPhone,
+                'snap_token'     => $donation->snap_token,
             ]
-        ]);
+        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate');
+
     }
+
 
     /**
      * Generate and download PDF for a successful donation.

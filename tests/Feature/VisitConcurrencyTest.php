@@ -35,8 +35,7 @@ class VisitConcurrencyTest extends TestCase
 
         $visit = Visit::create([
             'user_id' => $user->id,
-            'date' => '2026-12-01',
-            'slot' => TimeSlotEnum::MORNING->value,
+            'capacity_id' => $capacity->id,
             'status' => VisitStatusEnum::PENDING->value,
         ]);
 
@@ -45,7 +44,7 @@ class VisitConcurrencyTest extends TestCase
         
         $exceptionThrown = false;
         try {
-            $service->approveVisit($visit);
+            $service->approveVisit($visit->id);
         } catch (\Exception $e) {
             $exceptionThrown = true;
             $this->assertEquals("Capacity is full. Visit rejected due to race condition.", $e->getMessage());

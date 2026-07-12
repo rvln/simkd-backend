@@ -103,7 +103,16 @@ class DonationController extends Controller
                 return response()->json(['message' => 'Hanya donasi MANUAL yang dapat disetujui melalui endpoint ini.'], 403);
             }
 
-            $donation->update(['status' => DonationStatusEnum::SUCCESS->value]);
+            $trackingCode = $this->paymentService->generateTrackingCode();
+
+            $donation->update([
+                'status' => DonationStatusEnum::SUCCESS->value,
+                'tracking_code' => $trackingCode,
+            ]);
+
+            if ($donation->donorEmail) {
+                \Illuminate\Support\Facades\Mail::to($donation->donorEmail)->queue(new \App\Mail\FinancialDonationSuccessMail($donation));
+            }
 
             return response()->json([
                 'status' => 'success',
@@ -130,6 +139,10 @@ class DonationController extends Controller
             }
 
             $donation->update(['status' => DonationStatusEnum::REJECTED->value]);
+
+            if ($donation->donorEmail) {
+                \Illuminate\Support\Facades\Mail::to($donation->donorEmail)->queue(new \App\Mail\FinancialDonationRejectedMail($donation));
+            }
 
             return response()->json([
                 'status' => 'success',

@@ -23,7 +23,7 @@ class UserSeeder extends Seeder
 
         // KEPALA PANTI (Headmaster)
         User::create([
-            'name' => 'Dr. Lucas (Kepala)',
+            'name' => 'Dr. J. Lucas (Kepala)',
             'email' => 'kepala@empanti.com',
             'password' => Hash::make('password123'),
             'role' => RoleEnum::KEPALA_PANTI->value,

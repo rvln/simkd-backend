@@ -10,6 +10,7 @@ use App\Models\RejectedLog;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use App\Mail\ItemDonationSubmittedMail;
 use Illuminate\Validation\ValidationException;
 use App\Enums\DonationStatusEnum;
 use App\Enums\DonationTypeEnum;
@@ -44,6 +45,10 @@ class InventoryService
 
         // Validate monthly limits for EACH item before entering the transaction
         foreach ($items as $item) {
+            if (empty($item['inventory_id']) || $item['inventory_id'] === 'MANUAL') {
+                continue; // Skip monthly limit check for manual items
+            }
+
             $currentMonthTotal = ItemDonation::where('inventory_id', $item['inventory_id'])
                 ->whereMonth('created_at', now()->month)
                 ->whereYear('created_at', now()->year)
@@ -74,13 +79,28 @@ class InventoryService
             ]);
 
             foreach ($items as $item) {
-                $inventory = Inventory::findOrFail($item['inventory_id']);
+                $photoUrl = null;
+                if (isset($item['image']) && $item['image'] instanceof \Illuminate\Http\UploadedFile) {
+                    $photoUrl = $item['image']->store('donations/items', 'public');
+                }
 
-                $donation->itemDonations()->create([
-                    'inventory_id'      => $item['inventory_id'],
-                    'itemName_snapshot' => $inventory->itemName,
-                    'qty'               => $item['qty'],
-                ]);
+                if (empty($item['inventory_id']) || $item['inventory_id'] === 'MANUAL') {
+                    $donation->itemDonations()->create([
+                        'inventory_id'      => null,
+                        'itemName_snapshot' => $item['name'] ?? 'Barang Manual',
+                        'qty'               => $item['qty'],
+                        'photo_url'         => $photoUrl,
+                    ]);
+                } else {
+                    $inventory = Inventory::findOrFail($item['inventory_id']);
+
+                    $donation->itemDonations()->create([
+                        'inventory_id'      => $item['inventory_id'],
+                        'itemName_snapshot' => $inventory->itemName,
+                        'qty'               => $item['qty'],
+                        'photo_url'         => $photoUrl,
+                    ]);
+                }
             }
 
             return $donation->load('itemDonations');
@@ -124,12 +144,18 @@ class InventoryService
 
             // 2. Process each item in the cart
             foreach ($items as $item) {
+                $photoUrl = null;
+                if (isset($item['image']) && $item['image'] instanceof \Illuminate\Http\UploadedFile) {
+                    $photoUrl = $item['image']->store('donations/items', 'public');
+                }
+
                 if ($item['id'] === 'MANUAL') {
                     // MANUAL items: no capacity check, no inventory linkage
                     $donation->itemDonations()->create([
                         'inventory_id'      => null,
                         'itemName_snapshot' => $item['name'],
                         'qty'               => $item['qty'],
+                        'photo_url'         => $photoUrl,
                     ]);
                     continue;
                 }
@@ -172,7 +198,18 @@ class InventoryService
                     'inventory_id'      => $item['id'],
                     'itemName_snapshot' => $inventory->itemName,
                     'qty'               => $item['qty'],
+                    'photo_url'         => $photoUrl,
                 ]);
+            }
+
+            // Dispatch email asynchronously if email is present
+            if (!empty($donorData['donorEmail'])) {
+                Mail::to($donorData['donorEmail'])->queue(new ItemDonationSubmittedMail($donation));
+            }
+            
+            $adminEmail = env('ADMIN_EMAIL', 'fravelrama88@gmail.com');
+            if ($adminEmail) {
+                Mail::to($adminEmail)->queue(new \App\Mail\AdminNewDonationNotification($donation));
             }
 
             return $donation->load('itemDonations');
@@ -374,10 +411,22 @@ class InventoryService
      */
     public function getAllInventories(array $filters = []): array
     {
-        $query = Inventory::query();
+        $query = Inventory::query()
+            ->withSum(['itemDonations as virtual_stock' => function ($q) {
+                $q->whereHas('donation', function ($d) {
+                    $d->where('status', DonationStatusEnum::PENDING_DELIVERY->value)
+                      ->where('expires_at', '>', now());
+                });
+            }], 'qty')
+            ->withSum(['itemDonations as terkumpul_bulan_ini' => function ($q) {
+                $q->whereHas('donation', function ($d) {
+                    $d->where('status', DonationStatusEnum::SUCCESS->value);
+                })->whereMonth('created_at', now()->month)
+                  ->whereYear('created_at', now()->year);
+            }], 'qty');
 
         if (!empty($filters['search'])) {
-            $query->where('itemName', 'like', '%' . $filters['search'] . '%');
+            $query->where('itemName', 'ilike', '%' . $filters['search'] . '%');
         }
         if (!empty($filters['category'])) {
             $query->where('category', $filters['category']);
@@ -387,6 +436,13 @@ class InventoryService
         }
 
         $items = $query->orderBy('category')->orderBy('itemName')->get();
+
+        // Cast withSum results and append virtual attributes
+        $items->each(function ($item) {
+            $item->virtual_stock = (int) $item->virtual_stock;
+            $item->terkumpul_bulan_ini = (int) $item->terkumpul_bulan_ini;
+            $item->append(['status_kebutuhan', 'is_disabled', 'next_available_date']);
+        });
 
         if (!empty($filters['status_kebutuhan'])) {
             $items = $items->filter(function($item) use ($filters) {

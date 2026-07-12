@@ -30,6 +30,8 @@ class VisitController extends Controller
             $userId = $user->id;
 
             $visitorType = $request->input('visitor_type', 'Individu');
+            $visitorName = $request->input('visitor_name');
+            $purpose = $request->input('purpose');
             $proposalFilePath = null;
 
             if ($request->hasFile('proposal_file')) {
@@ -42,7 +44,9 @@ class VisitController extends Controller
                 $userId,
                 $request->capacity_id,
                 $visitorType,
-                $proposalFilePath
+                $proposalFilePath,
+                $visitorName,
+                $purpose
             );
 
             // Unified endpoint: if visitor brings donation items, process Smart Cart

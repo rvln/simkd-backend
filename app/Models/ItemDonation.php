@@ -15,7 +15,21 @@ class ItemDonation extends Model
         'inventory_id',
         'itemName_snapshot',
         'qty',
+        'photo_url',
     ];
+
+    protected static function booted()
+    {
+        static::saving(function ($itemDonation) {
+            $donation = $itemDonation->donation;
+            if ($donation) {
+                $donationType = $donation->type instanceof \BackedEnum ? $donation->type->value : $donation->type;
+                if ($donationType === \App\Enums\DonationTypeEnum::DANA->value) {
+                    throw new \InvalidArgumentException('Tidak dapat menambahkan item donasi ke donasi tipe DANA.');
+                }
+            }
+        });
+    }
 
     public function donation()
     {

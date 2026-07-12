@@ -76,7 +76,7 @@
     <div class="container">
         <div class="header">
             <h1>Bukti Transfer Donasi</h1>
-            <p>Panti Asuhan Dr Lucas</p>
+            <p>Panti Asuhan Dr. J. Lucas</p>
             <div class="status-badge">LUNAS / PAID</div>
         </div>
 

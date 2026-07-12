@@ -41,6 +41,36 @@ class Donation extends Model
         'expires_at' => 'datetime',
     ];
 
+    protected static function booted()
+    {
+        static::saving(function ($donation) {
+            $type = $donation->type instanceof \BackedEnum ? $donation->type->value : $donation->type;
+
+            if ($type === \App\Enums\DonationTypeEnum::DANA->value) {
+                if (is_null($donation->amount) || $donation->amount <= 0) {
+                    throw new \InvalidArgumentException('Jumlah donasi (amount) harus diisi untuk tipe donasi DANA.');
+                }
+
+                if ($donation->exists && $donation->itemDonations()->count() > 0) {
+                    throw new \InvalidArgumentException('Donasi finansial (DANA) tidak boleh memiliki item donasi barang.');
+                }
+            } elseif ($type === \App\Enums\DonationTypeEnum::BARANG->value) {
+                if (!is_null($donation->amount)) {
+                    throw new \InvalidArgumentException('Jumlah donasi (amount) harus bernilai null untuk tipe donasi BARANG.');
+                }
+
+                if ($donation->exists) {
+                    $status = $donation->status instanceof \BackedEnum ? $donation->status->value : $donation->status;
+                    if (in_array($status, [\App\Enums\DonationStatusEnum::PENDING_DELIVERY->value, \App\Enums\DonationStatusEnum::SUCCESS->value])) {
+                        if ($donation->itemDonations()->count() === 0) {
+                            throw new \InvalidArgumentException('Donasi barang harus memiliki minimal satu item barang.');
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     public function user()
     {
         return $this->belongsTo(User::class);
