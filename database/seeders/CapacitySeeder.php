@@ -12,13 +12,16 @@ class CapacitySeeder extends Seeder
     public function run(): void
     {
         for ($i = 0; $i < 7; $i++) {
-            $date = Carbon::now()->addDays($i)->format('Y-m-d');
+            $carbonDate = Carbon::now()->addDays($i);
+            $date = $carbonDate->format('Y-m-d');
+            $isWeekend = $carbonDate->isWeekend();
             
             Capacity::create([
                 'date' => $date,
                 'slot' => TimeSlotEnum::MORNING->value,
                 'quota' => 5,
                 'booked' => 0,
+                'is_active' => $isWeekend, // Buka hanya Sabtu-Minggu
             ]);
 
             Capacity::create([
@@ -26,6 +29,7 @@ class CapacitySeeder extends Seeder
                 'slot' => TimeSlotEnum::AFTERNOON->value,
                 'quota' => 5,
                 'booked' => 0,
+                'is_active' => true,
             ]);
         }
     }

@@ -323,36 +323,23 @@ class CapacityService
                 throw new HttpException(422, 'Hanya kunjungan berstatus NEEDS_RESCHEDULE yang dapat di-reschedule.');
             }
 
-            // 2. Pessimistic lock on BOTH capacities in deterministic order (by ID) to prevent deadlocks
             $oldCapacityId = $visit->capacity_id;
             
             if ($oldCapacityId === $newCapacityId) {
                 throw new HttpException(422, 'Slot baru tidak boleh sama dengan slot lama.');
             }
 
-            $capacities = Capacity::whereIn('id', [$oldCapacityId, $newCapacityId])
-                ->orderBy('id')
+            $newCapacity = Capacity::where('id', $newCapacityId)
                 ->lockForUpdate()
-                ->get()
-                ->keyBy('id');
-
-            $oldCapacity = $capacities->get($oldCapacityId);
-            $newCapacity = $capacities->get($newCapacityId);
+                ->first();
 
             if (!$newCapacity) {
                 throw new HttpException(404, 'Slot kapasitas baru tidak ditemukan.');
-            }
-            if (!$oldCapacity) {
-                throw new HttpException(404, 'Slot kapasitas lama tidak ditemukan.');
             }
 
             if ($newCapacity->booked >= $newCapacity->quota) {
                 throw new HttpException(422, 'Slot yang dipilih sudah penuh.');
             }
-
-            // 3. Transfer booked count (Safe because of lockForUpdate)
-            $oldCapacity->decrement('booked');
-            $newCapacity->increment('booked');
 
             // 4. Update visit record
             $visit->update([
