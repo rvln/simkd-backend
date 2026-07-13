@@ -141,3 +141,5 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/admin/visit-reports', [AdminReportModerationController::class, 'index']);
     Route::patch('/admin/visit-reports/{id}/moderate', [AdminReportModerationController::class, 'moderate']);
 });
+
+// Trigger deploy (14 July 2026)
