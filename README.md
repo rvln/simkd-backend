@@ -1,58 +1,249 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# SIMKD Backend
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Backend API untuk **Sistem Informasi Manajemen Kunjungan dan Donasi (SIMKD)** Panti Asuhan Dr. Lucas Manado.
 
-## About Laravel
+Repository ini menangani business logic, authentication & authorization, pengelolaan kunjungan, donasi, inventaris, distribusi, laporan, transparansi publik, integrasi pembayaran, email notification, dan persistence data.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+> **Status:** Thesis/project implementation. Data pada repository bersifat dummy/development data dan bukan data produksi.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Technology Stack
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+| Area | Technology |
+|---|---|
+| Language | PHP 8.3+ |
+| Framework | Laravel 13 |
+| Authentication | Laravel Sanctum |
+| OAuth | Laravel Socialite |
+| Database | Relational database via Laravel Eloquent & migrations |
+| Payment | Midtrans + manual payment flow |
+| Email | Resend / Symfony Mailer integration |
+| PDF | DomPDF |
+| Testing | PHPUnit / Laravel Test Suite |
 
-## Learning Laravel
+## Architecture
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+Backend menggunakan pendekatan **Modular Monolith dengan Service Layer** di atas struktur Laravel.
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
-```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+```text
+HTTP Request
+    ↓
+Route
+    ↓
+Controller / Form Request
+    ↓
+Service Layer
+    ↓
+Model / Database
+    ↓
+External Service (bila diperlukan)
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+Area utama berada di `app/`:
 
-## Contributing
+```text
+app/
+├── Enums/
+├── Http/
+├── Mail/
+├── Models/
+├── Providers/
+└── Services/
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Route API utama berada di `routes/api.php`, sedangkan database schema dikelola melalui migration di `database/migrations/`.
 
-## Code of Conduct
+## Main Capabilities
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### Authentication & Users
 
-## Security Vulnerabilities
+- Registration dan email verification
+- Login/logout berbasis Sanctum
+- Password recovery
+- Google OAuth
+- Role-based access untuk pengunjung, pengurus panti, dan kepala panti
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+### Visit Management
+
+- Pengajuan kunjungan berdasarkan tanggal dan slot
+- Validasi kapasitas
+- Approval, rejection, dan reschedule
+- Penyelesaian kunjungan dan pencatatan no-show
+- Notifikasi terkait perubahan status
+
+### Donation Management
+
+- Donasi finansial
+- Donasi barang
+- Midtrans dan pembayaran manual
+- Tracking code publik
+- Invoice
+- Webhook dan status reconciliation
+
+### Inventory & Distribution
+
+- Katalog kebutuhan
+- Virtual stock untuk donasi barang yang belum check-in
+- Check-in barang
+- Pencatatan inventaris
+- Distribusi barang
+- Rejected log / audit trail
+
+### Reporting & Transparency
+
+- Laporan kunjungan
+- Laporan donasi
+- Informasi kebutuhan publik
+- Public donation tracking
+- Data yang dibatasi sesuai konteks publik
+
+## API
+
+API tersedia di prefix `/api`.
+
+Kelompok endpoint utama meliputi:
+
+```text
+/api
+├── auth & user
+├── capacities
+├── visits
+├── donations
+├── inventory
+├── distribution
+├── reports
+├── validation
+├── public transparency
+└── admin moderation
+```
+
+Dokumentasi kontrak API dan endpoint berada pada **SIMKD Documentation**, khususnya bagian API. README ini hanya menjadi entry point agar source code dan dokumentasi tidak bercampur menjadi satu dokumen raksasa.
+
+## Local Development
+
+### Requirements
+
+Pastikan tersedia:
+
+- PHP 8.3+
+- Composer
+- Node.js / npm
+- Database relasional yang didukung Laravel
+
+### Installation
+
+```bash
+composer install
+
+cp .env.example .env
+php artisan key:generate
+
+php artisan migrate
+```
+
+Sesuaikan `.env` untuk database, mail, OAuth, Midtrans, storage, dan konfigurasi aplikasi lainnya sebelum menjalankan fitur terkait.
+
+### Run API
+
+```bash
+php artisan serve
+```
+
+Default local URL:
+
+```text
+http://localhost:8000
+```
+
+### Run Queue Worker
+
+Fitur tertentu menggunakan queued jobs, terutama notification/integration flow. Untuk development:
+
+```bash
+php artisan queue:listen --tries=1 --timeout=0
+```
+
+### Run Tests
+
+```bash
+php artisan test
+```
+
+atau:
+
+```bash
+composer test
+```
+
+### Code Formatting
+
+```bash
+./vendor/bin/pint
+```
+
+## Environment
+
+Jangan commit credential atau secret ke repository.
+
+Configuration yang perlu diperhatikan antara lain:
+
+```text
+APP_*
+DB_*
+MAIL_*
+GOOGLE_*
+MIDTRANS_*
+RESEND_*
+FILESYSTEM_*
+```
+
+Gunakan `.env.example` sebagai baseline dan simpan secret hanya pada environment lokal/hosting yang sesuai.
+
+## Important Domain Notes
+
+Beberapa behavior sistem bersifat cross-domain. Contohnya, pengajuan kunjungan dapat membawa konteks donasi, dan perubahan status kunjungan tertentu dapat memengaruhi donasi terkait.
+
+Ada pula behavior implementasi yang perlu diperhatikan saat maintenance, termasuk perbedaan aturan capacity handling pada jalur approval tertentu. Detail discrepancy dan status verifikasinya dicatat dalam dokumentasi domain/traceability, bukan disamarkan di README.
+
+## Repository Structure
+
+```text
+.
+├── app/              # application code
+├── bootstrap/        # framework bootstrap
+├── config/           # application configuration
+├── database/         # migrations, factories, seeders
+├── public/           # public assets / entry point
+├── resources/        # backend-side resources
+├── routes/           # API routes
+├── storage/          # runtime files
+├── tests/             # automated tests
+├── composer.json
+└── README.md
+```
+
+## Documentation
+
+Dokumentasi teknis proyek dipisahkan dari source code dan mencakup:
+
+- Product & business rules
+- Backend architecture
+- Frontend architecture
+- Database
+- API contract
+- Testing
+- Operations
+- Technical decisions
+- Traceability
+- Maintenance & change impact
+
+README ini berfungsi sebagai **repository-level entry point**. Detail implementasi tidak sengaja diduplikasi di sini agar ketika kode berubah, kita tidak perlu memperbaiki informasi yang sama di lima tempat berbeda.
+
+## Related Repository
+
+Frontend SIMKD:
+
+- https://github.com/rvln/simkd-frontend
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Project-specific thesis implementation. See repository configuration and project agreement for applicable usage terms.
